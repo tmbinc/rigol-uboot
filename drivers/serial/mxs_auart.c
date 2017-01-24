@@ -18,36 +18,27 @@
 #include <asm/io.h>
 #include <serial.h>
 #include <linux/compiler.h>
+#include <dm/device.h>
+#include <dm/platform_data/serial_mxs_auart.h>
 #include <asm/arch/regs-base.h>
 #include <asm/arch/regs-uartapp.h>
 #include <asm/arch/sys_proto.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
-#ifndef CONFIG_MXS_AUART_BASE
-#error "CONFIG_MXS_AUART_BASE must be set to the base UART to use"
-#endif
-
 /* AUART clock always supplied by XTAL and always 24MHz */
 #define MXS_AUART_CLK 24000000
-
-static struct mxs_uartapp_regs *get_uartapp_registers(void)
-{
-	return (struct mxs_uartapp_regs *)CONFIG_MXS_AUART_BASE;
-}
 
 /**
  * Sets the baud rate and settings.
  * The settings are: 8 data bits, no parit and 1 stop bit.
  */
-static void mxs_auart_setbrg(void)
+static int mxs_auart_setbrg(struct udevice *dev, int baudrate)
 {
+	struct mxs_uartapp_platdata *plat = dev->platdata;
+	struct mxs_uartapp_regs *regs = plat->regs;
 	u32 div;
 	u32 linectrl = 0;
-	struct mxs_uartapp_regs *regs = get_uartapp_registers();
-
-	if (!gd->baudrate)
-		gd->baudrate = CONFIG_BAUDRATE;
 
 	/*
 	 * From i.MX28 datasheet:
@@ -56,9 +47,9 @@ static void mxs_auart_setbrg(void)
 	 * Lowest 6 bits of div goes in BAUD_DIVFRAC part of LINECTRL register
 	 * Next 16 bits goes in BAUD_DIVINT part of LINECTRL register
 	 */
-	div = (MXS_AUART_CLK * 32) / gd->baudrate;
+	div = (MXS_AUART_CLK * 32) / baudrate;
 	if (div < 0xEC || div > 0x003FFFC0)
-		return;
+		return -EINVAL;
 
 	linectrl |= ((div & UARTAPP_LINECTRL_EXTRACT_BAUD_DIVFRAC_MASK) <<
 		UARTAPP_LINECTRL_BAUD_DIVFRAC_OFFSET) &
@@ -75,11 +66,40 @@ static void mxs_auart_setbrg(void)
 
 	/* Write above settings, no parity, 1 stop bit */
 	writel(linectrl, &regs->hw_uartapp_linectrl);
+
+	return 0;
 }
 
-static int mxs_auart_init(void)
+static int mxs_auart_putc(struct udevice *dev, const char ch)
 {
-	struct mxs_uartapp_regs *regs = get_uartapp_registers();
+	struct mxs_uartapp_platdata *plat = dev->platdata;
+	struct mxs_uartapp_regs *regs = plat->regs;
+	if (readl(&regs->hw_uartapp_stat) & UARTAPP_STAT_TXFF_MASK)
+		return -EAGAIN;
+
+	writel(ch, &regs->hw_uartapp_data);
+}
+
+static int mxs_auart_pending(struct udevice *dev, bool input)
+{
+	struct mxs_uartapp_platdata *plat = dev->platdata;
+	struct mxs_uartapp_regs *regs = plat->regs;
+	if (input)
+	{
+		/* Checks if receive FIFO is empty */
+		return !(readl(&regs->hw_uartapp_stat) & UARTAPP_STAT_RXFE_MASK);
+	} else
+	{
+		/* Checks if transmit FIFO is full */
+		return !(readl(&regs->hw_uartapp_stat) & UARTAPP_STAT_TXFF_MASK);
+	}
+}
+
+static int mxs_auart_probe(struct udevice *dev)
+{
+	struct mxs_uartapp_platdata *plat = dev->platdata;
+	struct mxs_uartapp_regs *regs = plat->regs;
+
 	/* Reset everything */
 	mxs_reset_block(&regs->hw_uartapp_ctrl0_reg);
 	/* Disable interrupts */
@@ -96,56 +116,62 @@ static int mxs_auart_init(void)
 			UARTAPP_CTRL2_TXE_MASK |
 			UARTAPP_CTRL2_UARTEN_MASK,
 			&regs->hw_uartapp_ctrl2_set);
+
 	return 0;
 }
 
-static void mxs_auart_putc(const char c)
+static int mxs_auart_getc(struct udevice *dev)
 {
-	struct mxs_uartapp_regs *regs = get_uartapp_registers();
-	/* Wait in loop while the transmit FIFO is full */
-	while (readl(&regs->hw_uartapp_stat) & UARTAPP_STAT_TXFF_MASK)
-		;
+	struct mxs_uartapp_platdata *plat = dev->platdata;
+	struct mxs_uartapp_regs *regs = plat->regs;
 
-	writel(c, &regs->hw_uartapp_data);
+	if (readl(&regs->hw_uartapp_stat) & UARTAPP_STAT_RXFE_MASK)
+		return -EAGAIN;
 
-	if (c == '\n')
-		mxs_auart_putc('\r');
-}
-
-static int mxs_auart_tstc(void)
-{
-	struct mxs_uartapp_regs *regs = get_uartapp_registers();
-	/* Checks if receive FIFO is empty */
-	return !(readl(&regs->hw_uartapp_stat) & UARTAPP_STAT_RXFE_MASK);
-}
-
-static int mxs_auart_getc(void)
-{
-	struct mxs_uartapp_regs *regs = get_uartapp_registers();
-	/* Wait until a character is available to read */
-	while (!mxs_auart_tstc())
-		;
-	/* Read the character from the data register */
 	return readl(&regs->hw_uartapp_data) & 0xFF;
 }
 
-static struct serial_device mxs_auart_drv = {
-	.name = "mxs_auart_serial",
-	.start = mxs_auart_init,
-	.stop = NULL,
-	.setbrg = mxs_auart_setbrg,
+static const struct dm_serial_ops mxs_auart_ops = {
 	.putc = mxs_auart_putc,
-	.puts = default_serial_puts,
+	.pending = mxs_auart_pending,
 	.getc = mxs_auart_getc,
-	.tstc = mxs_auart_tstc,
+	.setbrg = mxs_auart_setbrg,
 };
 
-void mxs_auart_initialize(void)
+#if CONFIG_IS_ENABLED(OF_CONTROL)
+static int mxs_auart_ofdata_to_platdata(struct udevice *dev)
 {
-	serial_register(&mxs_auart_drv);
+	struct mxs_uartapp_platdata *plat = dev->platdata;
+	struct mxs_uartapp_regs *regs = plat->regs;
+	fdt_addr_t addr;
+
+	addr = dev_get_addr(dev);
+	if (addr == FDT_ADDR_T_NONE)
+		return -EINVAL;
+
+	plat->regs = (struct mxs_uartapp_regs *)addr;
+	return 0;
 }
 
-__weak struct serial_device *default_serial_console(void)
-{
-	return &mxs_auart_drv;
-}
+
+static const struct udevice_id mxs_auart_ids[] = {
+        {
+                .compatible = "fsl,imx28-auart",
+        }, {
+                .compatible = "fsl,imx23-auart",
+        }, { /* sentinel */ }
+};
+#endif
+
+U_BOOT_DRIVER(mxs_auart) = {
+	.name	= "mxs_auart_serial",
+	.id	= UCLASS_SERIAL,
+#if CONFIG_IS_ENABLED(OF_CONTROL)
+	.of_match = mxs_auart_ids,
+	.ofdata_to_platdata = mxs_auart_ofdata_to_platdata,
+	.platdata_auto_alloc_size = sizeof(struct mxs_uartapp_platdata),
+#endif
+	.probe = mxs_auart_probe,
+	.ops	= &mxs_auart_ops,
+	.flags = DM_FLAG_PRE_RELOC,
+};

@@ -330,6 +330,10 @@ config MXC_UART
 	  If you have a machine based on a Motorola IMX CPU you
 	  can enable its onboard serial port by enabling this option.
 
+config MXS_AUART
+	bool "IMX application serial port support"
+	depends on DM_SERIAL
+
 config PIC32_SERIAL
 	bool "Support for Microchip PIC32 on-chip UART"
 	depends on DM_SERIAL && MACH_PIC32
