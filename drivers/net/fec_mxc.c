@@ -190,6 +190,7 @@ static int fec_phy_write(struct mii_dev *bus, int phyaddr, int dev_addr,
 }
 
 #ifndef CONFIG_PHYLIB
+#error naaah
 static int miiphy_restart_aneg(struct eth_device *dev)
 {
 	int ret = 0;
@@ -658,7 +659,7 @@ static int fec_send(struct eth_device *dev, void *packet, int length)
 	/*
 	 * Check for valid length of data.
 	 */
-	if ((length > 1500) || (length <= 0)) {
+	if ((length > 1514) || (length <= 0)) {
 		printf("Payload (%d) too large\n", length);
 		return -1;
 	}
@@ -1188,8 +1189,9 @@ static int fec_phy_init(struct fec_priv *priv, struct udevice *dev)
 	int mask = 0xffffffff;
 
 #ifdef CONFIG_PHYLIB
-	mask = 1 << CONFIG_FEC_MXC_PHYADDR;
+//	mask = 1 << CONFIG_FEC_MXC_PHYADDR;
 #endif
+	mask &= ~1;
 
 	phydev = phy_find_by_mask(priv->bus, mask, priv->interface);
 	if (!phydev)
@@ -1295,6 +1297,7 @@ static int fecmxc_ofdata_to_platdata(struct udevice *dev)
 
 static const struct udevice_id fecmxc_ids[] = {
 	{ .compatible = "fsl,imx6q-fec" },
+	{ .compatible = "fsl,imx28-fec" },
 	{ }
 };
 

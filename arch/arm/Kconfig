@@ -242,6 +242,11 @@ config TARGET_MX28EVK
 	select CPU_ARM926EJS
 	select SUPPORT_SPL
 
+config TARGET_DS1000Z
+	bool "Support ds1000z"
+	select CPU_ARM926EJS
+	select SUPPORT_SPL
+
 config TARGET_MX23_OLINUXINO
 	bool "Support mx23_olinuxino"
 	select CPU_ARM926EJS
@@ -1066,6 +1071,7 @@ source "board/vscom/baltos/Kconfig"
 source "board/woodburn/Kconfig"
 source "board/work-microwave/work_92105/Kconfig"
 source "board/zipitz2/Kconfig"
+source "board/rigol/ds1000z/Kconfig"
 
 source "arch/arm/Kconfig.debug"
 

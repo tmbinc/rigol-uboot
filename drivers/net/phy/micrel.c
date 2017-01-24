@@ -1,3 +1,4 @@
+
 /*
  * Micrel PHY drivers
  *
@@ -40,6 +41,16 @@ static int ksz_genconfig_bcastoff(struct phy_device *phydev)
 
 	ret = phy_write(phydev, MDIO_DEVAD_NONE, MII_KSZPHY_OMSO,
 			ret | KSZPHY_OMSO_B_CAST_OFF);
+	if (ret < 0)
+		return ret;
+
+	/* weird rigol fix (this is setting the clock to 25mhz) */
+	ret = phy_read(phydev, MDIO_DEVAD_NONE, 0x1f);
+	if (ret < 0)
+		return ret;
+
+	ret = phy_write(phydev, MDIO_DEVAD_NONE, 0x1f,
+			ret | 0x80);
 	if (ret < 0)
 		return ret;
 

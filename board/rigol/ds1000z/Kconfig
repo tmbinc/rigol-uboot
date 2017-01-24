@@ -1,0 +1,15 @@
+if TARGET_DS1000Z
+
+config SYS_BOARD
+	default "ds1000z"
+
+config SYS_VENDOR
+	default "rigol"
+
+config SYS_SOC
+	default "mxs"
+
+config SYS_CONFIG_NAME
+	default "ds1000z"
+
+endif

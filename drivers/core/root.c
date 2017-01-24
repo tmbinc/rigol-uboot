@@ -1,3 +1,4 @@
+#define debug
 /*
  * Copyright (c) 2013 Google, Inc
  *
